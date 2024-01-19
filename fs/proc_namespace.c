@@ -74,9 +74,21 @@ static void show_mnt_opts(struct seq_file *m, struct vfsmount *mnt)
 		{ 0, NULL }
 	};
 	const struct proc_fs_opts *fs_infop;
+	struct mount *r = real_mount(mnt);
+	int flags = mnt->mnt_flags;
+	char pathbuf[16], *path;
+	path = dentry_path_raw(mnt->mnt_root, pathbuf, sizeof(pathbuf));
+	if (!IS_ERR(path) && strcmp(path, "/") == 0) {
+		path = dentry_path_raw(r->mnt_mountpoint, pathbuf, sizeof(pathbuf));
+		if (!IS_ERR(path) && strcmp(path, "/data") == 0) {
+			flags |= MNT_NOSUID;
+			flags |= MNT_NODEV;
+			pr_info("kxxt: fake nosuid and nodev for /data");
+		}
+	}
 
 	for (fs_infop = mnt_opts; fs_infop->flag; fs_infop++) {
-		if (mnt->mnt_flags & fs_infop->flag)
+		if (flags & fs_infop->flag)
 			seq_puts(m, fs_infop->str);
 	}
 }
