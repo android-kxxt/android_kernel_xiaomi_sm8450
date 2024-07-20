@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
+#include <linux/of_gpio.h>
 #include <linux/io.h>
 #include <linux/types.h>
 #include "linux/gunyah/gh_mem_notifier.h"
@@ -36,8 +38,8 @@ static struct gh_acl_desc *gh_tlmm_vm_get_acl(enum gh_vm_names vm_name)
 	gh_vmid_t vmid;
 	gh_vmid_t primary_vmid;
 
-	gh_rm_get_vmid(vm_name, &vmid);
-	gh_rm_get_vmid(GH_PRIMARY_VM, &primary_vmid);
+	ghd_rm_get_vmid(vm_name, &vmid);
+	ghd_rm_get_vmid(GH_PRIMARY_VM, &primary_vmid);
 
 	acl_desc = kzalloc(offsetof(struct gh_acl_desc, acl_entries[2]),
 			GFP_KERNEL);
@@ -85,19 +87,17 @@ static int gh_tlmm_vm_mem_share(struct gh_tlmm_vm_info *gh_tlmm_vm_info_data)
 	acl_desc = gh_tlmm_vm_get_acl(GH_TRUSTED_VM);
 	if (IS_ERR(acl_desc)) {
 		dev_err(gh_tlmm_dev, "Failed to get acl of IO memories for TLMM\n");
-		PTR_ERR(acl_desc);
-		return -EINVAL;
+		return PTR_ERR(acl_desc);
 	}
 
 	sgl_desc = gh_tlmm_vm_get_sgl(gh_tlmm_vm_info_data);
 	if (IS_ERR(sgl_desc)) {
 		dev_err(gh_tlmm_dev, "Failed to get sgl of IO memories for TLMM\n");
-		PTR_ERR(sgl_desc);
-		rc = -EINVAL;
+		rc = PTR_ERR(sgl_desc);
 		goto sgl_error;
 	}
 
-	rc = gh_rm_mem_share(GH_RM_MEM_TYPE_IO, 0, GH_TLMM_MEM_LABEL,
+	rc = ghd_rm_mem_share(GH_RM_MEM_TYPE_IO, 0, GH_TLMM_MEM_LABEL,
 			acl_desc, sgl_desc, NULL, &mem_handle);
 	if (rc) {
 		dev_err(gh_tlmm_dev, "Failed to share IO memories for TLMM rc:%d\n", rc);
@@ -119,18 +119,23 @@ static int __maybe_unused gh_guest_memshare_nb_handler(struct notifier_block *th
 {
 	struct gh_tlmm_vm_info *vm_info;
 	struct gh_rm_notif_vm_status_payload *vm_status_payload = data;
-	u8 vm_status = vm_status_payload->vm_status;
+	gh_vmid_t peer_vmid;
 
 	vm_info = container_of(this, struct gh_tlmm_vm_info, guest_memshare_nb);
 
 	if (cmd != GH_RM_NOTIF_VM_STATUS)
 		return NOTIFY_DONE;
 
+	ghd_rm_get_vmid(GH_TRUSTED_VM, &peer_vmid);
+
+	if (peer_vmid != vm_status_payload->vmid)
+		return NOTIFY_DONE;
+
 	/*
 	 * Listen to STATUS_READY notification from RM.
 	 * These notifications come from RM after PIL loading the VM images.
 	 */
-	if (vm_status == GH_RM_VM_STATUS_READY)
+	if (vm_status_payload->vm_status == GH_RM_VM_STATUS_READY)
 		gh_tlmm_vm_mem_share(&gh_tlmm_vm_info_data);
 
 	return NOTIFY_DONE;
@@ -169,7 +174,7 @@ static int gh_tlmm_vm_mem_reclaim(struct gh_tlmm_vm_info *gh_tlmm_vm_info_data)
 		return -EINVAL;
 	}
 
-	rc = gh_rm_mem_reclaim(gh_tlmm_vm_info_data->vm_mem_handle, 0);
+	rc = ghd_rm_mem_reclaim(gh_tlmm_vm_info_data->vm_mem_handle, 0);
 	if (rc)
 		dev_err(gh_tlmm_dev, "VM mem reclaim failed rc:%d\n", rc);
 
@@ -180,7 +185,7 @@ static int gh_tlmm_vm_mem_reclaim(struct gh_tlmm_vm_info *gh_tlmm_vm_info_data)
 
 static int gh_tlmm_vm_populate_vm_info(struct platform_device *dev, struct gh_tlmm_vm_info *vm_info)
 {
-	int rc = 0, i;
+	int rc = 0, i, gpio;
 	struct device_node *np = dev->dev.of_node;
 	int num_regs = 0;
 	struct resource *res;
@@ -202,9 +207,8 @@ static int gh_tlmm_vm_populate_vm_info(struct platform_device *dev, struct gh_tl
 	}
 
 	vm_info->vm_name = GH_TRUSTED_VM;
-	num_regs = of_property_count_u32_elems(np,
+	num_regs = of_gpio_named_count(np,
 			"tlmm-vm-gpio-list");
-
 	if (num_regs < 0) {
 		dev_err(gh_tlmm_dev, "Invalid number of gpios specified\n");
 		rc = -EINVAL;
@@ -214,11 +218,15 @@ static int gh_tlmm_vm_populate_vm_info(struct platform_device *dev, struct gh_tl
 	gpios = kmalloc_array(num_regs, sizeof(*gpios), GFP_KERNEL);
 	if (!gpios)
 		return -ENOMEM;
-	rc = of_property_read_u32_array(np, "tlmm-vm-gpio-list",
-			gpios, num_regs);
-	if (rc) {
-		dev_err(gh_tlmm_dev, "Failed to receive shared gpios rc:%d\n", rc);
-		goto gpios_error;
+
+	for (i = 0; i < num_regs; i++) {
+		gpio = of_get_named_gpio(np, "tlmm-vm-gpio-list", i);
+		if (gpio < 0) {
+			rc = gpio;
+			dev_err(gh_tlmm_dev, "Failed to receive shared gpios %d\n", rc);
+			goto gpios_error;
+		}
+		gpios[i] = gpio;
 	}
 
 	vm_info->iomem_list_size = num_regs;
@@ -333,16 +341,15 @@ static int gh_tlmm_vm_mem_access_probe(struct platform_device *pdev)
 		gh_tlmm_vm_info_data.mem_cookie = mem_cookie;
 		gh_tlmm_vm_info_data.guest_memshare_nb.notifier_call = gh_guest_memshare_nb_handler;
 
-		/* Higher priority than guestVM loader */
-		gh_tlmm_vm_info_data.guest_memshare_nb.priority = 1;
+		gh_tlmm_vm_info_data.guest_memshare_nb.priority = INT_MAX;
 		ret = gh_rm_register_notifier(&gh_tlmm_vm_info_data.guest_memshare_nb);
 		if (ret)
 			return ret;
 	} else {
-		/* GH_TRUSTED_VM */
-		ret = gh_rm_get_vmid(GH_TRUSTED_VM, &vmid);
+		ret = ghd_rm_get_vmid(GH_TRUSTED_VM, &vmid);
 		if (ret)
 			return ret;
+
 
 		gh_tlmm_vm_mem_release(&gh_tlmm_vm_info_data);
 	}
@@ -381,10 +388,7 @@ static struct platform_driver gh_tlmm_vm_mem_access_driver = {
 
 static int __init gh_tlmm_vm_mem_access_init(void)
 {
-	int ret;
-
-	ret = platform_driver_register(&gh_tlmm_vm_mem_access_driver);
-	return ret;
+	return platform_driver_register(&gh_tlmm_vm_mem_access_driver);
 }
 module_init(gh_tlmm_vm_mem_access_init);
 
@@ -395,4 +399,4 @@ static __exit void gh_tlmm_vm_mem_access_exit(void)
 module_exit(gh_tlmm_vm_mem_access_exit);
 
 MODULE_DESCRIPTION("Qualcomm Technologies, Inc. TLMM VM Memory Access Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
