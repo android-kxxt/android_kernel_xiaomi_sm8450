@@ -18,7 +18,7 @@
 
 #define QC_HYP_SMCCC_CALL_UID                                                  \
 	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_32,              \
-			   ARM_SMCCC_OWNER_VENDOR_HYP, 0x3f01)
+			   ARM_SMCCC_OWNER_VENDOR_HYP, 0xff01)
 #define QC_HYP_SMCCC_REVISION                                                  \
 	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_32,              \
 			   ARM_SMCCC_OWNER_VENDOR_HYP, 0xff03)
@@ -249,6 +249,7 @@ static int __init gh_ctrl_init(void)
 
 	/* Check for ARM SMCCC VENDOR_HYP service calls by UID. */
 	arm_smccc_1_1_smc(QC_HYP_SMCCC_CALL_UID, &res);
+	pr_info("Gunyah: arm_smccc_1_1_smc QC_HYP_SMCCC_CALL_UID = %lu %lu %lu %lu", res.a0, res.a1, res.a2, res.a3);
 	if ((res.a0 == QC_HYP_UID0) && (res.a1 == QC_HYP_UID1) &&
 	    (res.a2 == QC_HYP_UID2) && (res.a3 == QC_HYP_UID3))
 		qc_hyp_calls = true;
