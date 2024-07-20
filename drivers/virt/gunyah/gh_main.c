@@ -454,7 +454,7 @@ int gh_reclaim_mem(struct gh_vm *vm, phys_addr_t phys,
 						vm->vmid, ret);
 	}
 
-	ret = qcom_scm_assign_mem(phys, size, &srcVM, destVM, ARRAY_SIZE(destVM));
+	ret = qcom_scm_assign_mem64(phys, size, &srcVM, destVM, ARRAY_SIZE(destVM));
 	if (ret)
 		pr_err("failed qcom_assign for %pa address of size %zx - subsys VMid %d rc:%d\n",
 			&phys, size, vmid, ret);
@@ -496,7 +496,7 @@ int gh_provide_mem(struct gh_vm *vm, phys_addr_t phys,
 	sgl_desc->sgl_entries[0].ipa_base = phys;
 	sgl_desc->sgl_entries[0].size = size;
 
-	ret = qcom_scm_assign_mem(phys, size, &srcvmid, destVM,
+	ret = qcom_scm_assign_mem64(phys, size, &srcvmid, destVM,
 					ARRAY_SIZE(destVM));
 	if (ret) {
 		pr_err("failed qcom_assign for %pa address of size %zx - subsys VMid %d rc:%d\n",
@@ -519,7 +519,7 @@ int gh_provide_mem(struct gh_vm *vm, phys_addr_t phys,
 				sgl_desc, NULL, &vm->mem_handle);
 
 	if (ret) {
-		ret = qcom_scm_assign_mem(phys, size, &dstvmid,
+		ret = qcom_scm_assign_mem64(phys, size, &dstvmid,
 				      srcVM, ARRAY_SIZE(srcVM));
 		if (ret)
 			pr_err("failed qcom_assign for %pa address of size %zx - subsys VMid %d rc:%d\n",

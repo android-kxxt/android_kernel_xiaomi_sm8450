@@ -1185,10 +1185,10 @@ unshare_a_vm_buffer(gh_vmid_t self, gh_vmid_t peer, struct resource *r,
 		return ret;
 	}
 
-	ret = qcom_scm_assign_mem(r->start, resource_size(r), &src_vmlist,
+	ret = qcom_scm_assign_mem64(r->start, resource_size(r), &src_vmlist,
 				      dst_vmlist, ARRAY_SIZE(dst_vmlist));
 	if (ret)
-		pr_err("%s: qcom_scm_assign_mem failed for addr=%llx size=%lld err=%d\n",
+		pr_err("%s: qcom_scm_assign_mem64 failed for addr=%llx size=%lld err=%d\n",
 			VIRTIO_PRINT_MARKER, r->start, resource_size(r), ret);
 
 	return ret;
@@ -1243,10 +1243,10 @@ static int share_a_vm_buffer(gh_vmid_t self, gh_vmid_t peer, int gunyah_label,
 		return -ENOMEM;
 	}
 
-	ret = qcom_scm_assign_mem(r->start, resource_size(r), &src_vmids,
+	ret = qcom_scm_assign_mem64(r->start, resource_size(r), &src_vmids,
 				      dst_vmlist, ARRAY_SIZE(dst_vmlist));
 	if (ret) {
-		pr_err("%s: qcom_scm_assign_mem failed for addr=%llx size=%lld err=%d\n",
+		pr_err("%s: qcom_scm_assign_mem64 failed for addr=%llx size=%lld err=%d\n",
 		       VIRTIO_PRINT_MARKER, r->start, resource_size(r), ret);
 		kfree(acl);
 		kfree(sgl);
@@ -1268,9 +1268,9 @@ static int share_a_vm_buffer(gh_vmid_t self, gh_vmid_t peer, int gunyah_label,
 	if (ret) {
 		pr_err("%s: Sharing memory failed %d\n", VIRTIO_PRINT_MARKER, ret);
 		/* Attempt to assign resource back to HLOS */
-		if (qcom_scm_assign_mem(r->start, resource_size(r), &dst_vmids,
+		if (qcom_scm_assign_mem64(r->start, resource_size(r), &dst_vmids,
 				      src_vmlist, ARRAY_SIZE(src_vmlist)))
-			pr_err("%s: qcom_scm_assign_mem to re-assign addr=%llx size=%lld back to HLOS failed\n",
+			pr_err("%s: qcom_scm_assign_mem64 to re-assign addr=%llx size=%lld back to HLOS failed\n",
 			       VIRTIO_PRINT_MARKER, r->start, resource_size(r));
 	}
 

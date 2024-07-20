@@ -10,7 +10,7 @@
 #include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <linux/of_reserved_mem.h>
-#include <linux/panic_notifier.h>
+#include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <linux/pm.h>
 #include <linux/qcom_scm.h>
@@ -94,10 +94,10 @@ static int gh_panic_notifier_share_mem(gh_vmid_t self, gh_vmid_t peer)
 	struct gh_sgl_desc *sgl;
 	int ret, assign_mem_ret;
 
-	ret = qcom_scm_assign_mem(gpnd->res.start, gpnd->size, &src_vmid,
+	ret = qcom_scm_assign_mem64(gpnd->res.start, gpnd->size, &src_vmid,
 				dst_vmlist, ARRAY_SIZE(dst_vmlist));
 	if (ret) {
-		dev_err(gpnd->dev, "qcom_scm_assign_mem addr=%x size=%u failed: %d\n",
+		dev_err(gpnd->dev, "qcom_scm_assign_mem64 addr=%x size=%u failed: %d\n",
 		       gpnd->res.start, gpnd->size, ret);
 		return ret;
 	}
@@ -126,10 +126,10 @@ static int gh_panic_notifier_share_mem(gh_vmid_t self, gh_vmid_t peer)
 		dev_err(gpnd->dev, "Gunyah mem share addr=%x size=%u failed: %d\n",
 		       gpnd->res.start, gpnd->size, ret);
 		/* Attempt to give resource back to HLOS */
-		assign_mem_ret = qcom_scm_assign_mem(gpnd->res.start, gpnd->size, &dst_vmid,
+		assign_mem_ret = qcom_scm_assign_mem64(gpnd->res.start, gpnd->size, &dst_vmid,
 				src_vmlist, ARRAY_SIZE(src_vmlist));
 		if (assign_mem_ret) {
-			dev_err(gpnd->dev, "qcom_scm_assign_mem addr=%x size=%u failed: %d\n",
+			dev_err(gpnd->dev, "qcom_scm_assign_mem64 addr=%x size=%u failed: %d\n",
 				gpnd->res.start, gpnd->size, ret);
 		}
 	}
@@ -151,7 +151,7 @@ static void gh_panic_notifier_unshare_mem(gh_vmid_t self, gh_vmid_t peer)
 	if (ret)
 		dev_err(gpnd->dev, "Gunyah mem reclaim failed: %d\n", ret);
 
-	ret = qcom_scm_assign_mem(gpnd->res.start, resource_size(&gpnd->res),
+	ret = qcom_scm_assign_mem64(gpnd->res.start, resource_size(&gpnd->res),
 			&src_vmid, dst_vmlist, ARRAY_SIZE(dst_vmlist));
 	if (ret) {
 		dev_err(gpnd->dev, "unshare mem assign call failed with %d\n",

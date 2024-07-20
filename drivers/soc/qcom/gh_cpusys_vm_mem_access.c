@@ -65,7 +65,7 @@ static int gh_cpusys_vm_share_mem(struct gh_cpusys_vm_data *drv_data,
 	struct gh_sgl_desc *sgl;
 	int ret;
 
-	ret = qcom_scm_assign_mem(drv_data->res.start, resource_size(&drv_data->res), &srcvmids,
+	ret = qcom_scm_assign_mem64(drv_data->res.start, resource_size(&drv_data->res), &srcvmids,
 			dst_vmlist, ARRAY_SIZE(dst_vmlist));
 	if (ret) {
 		dev_err(drv_data->dev, "%s: qcom_scm_assign_mem failed addr=%x size=%u err=%d\n",
@@ -97,7 +97,7 @@ static int gh_cpusys_vm_share_mem(struct gh_cpusys_vm_data *drv_data,
 		dev_err(drv_data->dev, "%s: gh_rm_mem_share failed addr=%x size=%u err=%d\n",
 			__func__, drv_data->res.start, resource_size(&drv_data->res), ret);
 		/* Attempt to give resource back to HLOS */
-		qcom_scm_assign_mem(drv_data->res.start, resource_size(&drv_data->res),
+		qcom_scm_assign_mem64(drv_data->res.start, resource_size(&drv_data->res),
 				&dstvmids, src_vmlist, ARRAY_SIZE(src_vmlist));
 	}
 
