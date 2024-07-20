@@ -112,7 +112,7 @@ static const uuid_t QCOM_EXT_UUID =
 	UUID_INIT(0x19bd54bd, 0x0b37, 0x571b, 0x94, 0x6f, 0x60, 0x9b, 0x54, 0x53, 0x9d, 0xe6);
 
 #define GH_QCOM_EXT_CALL_UUID_ID	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_32, \
-							   ARM_SMCCC_OWNER_VENDOR_HYP, 0x3f01)
+							   ARM_SMCCC_OWNER_VENDOR_HYP, 0xff01)
 
 static bool gh_has_qcom_extensions(void)
 {
