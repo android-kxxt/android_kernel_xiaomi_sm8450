@@ -8,6 +8,7 @@
 #include <linux/module.h>
 #include <linux/qcom_scm.h>
 #include <linux/types.h>
+#include <linux/slab.h>
 #include <linux/uuid.h>
 
 #define QCOM_SCM_RM_MANAGED_VMID	0x3A

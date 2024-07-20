@@ -7,6 +7,7 @@
 
 #include <linux/gunyah_rsc_mgr.h>
 #include <linux/mm.h>
+#include <linux/slab.h>
 
 #include <uapi/linux/gunyah.h>
 

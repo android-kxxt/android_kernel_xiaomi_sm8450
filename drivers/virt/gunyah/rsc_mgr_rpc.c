@@ -3,6 +3,7 @@
  * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/slab.h>
 #include <linux/gunyah_rsc_mgr.h>
 #include "rsc_mgr.h"
 

@@ -12,6 +12,7 @@
 #include <linux/gunyah_vm_mgr.h>
 #include <linux/miscdevice.h>
 #include <linux/mm.h>
+#include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/xarray.h>
 
