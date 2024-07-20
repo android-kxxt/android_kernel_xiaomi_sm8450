@@ -242,6 +242,7 @@ struct xa_limit {
 
 #define xa_limit_32b	XA_LIMIT(0, UINT_MAX)
 #define xa_limit_31b	XA_LIMIT(0, INT_MAX)
+#define xa_limit_16b	XA_LIMIT(0, USHRT_MAX)
 
 typedef unsigned __bitwise xa_mark_t;
 #define XA_MARK_0		((__force xa_mark_t)0U)
