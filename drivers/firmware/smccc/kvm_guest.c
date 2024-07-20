@@ -9,7 +9,7 @@
 
 #include <asm/hypervisor.h>
 
-static DECLARE_BITMAP(__kvm_arm_hyp_services, ARM_SMCCC_KVM_NUM_FUNCS) __ro_after_init = { };
+static DECLARE_BITMAP(__kvm_arm_hyp_services, ARM_SMCCC_KVM_NUM_FUNCS);
 
 void __init kvm_init_hyp_services(void)
 {
