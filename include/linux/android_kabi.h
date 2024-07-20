@@ -71,7 +71,8 @@
 #endif /* __GENKSYMS__ */
 
 #define _ANDROID_KABI_RESERVE(n)		u64 android_kabi_reserved##n
-
+#define _ANDROID_BACKPORT_RESERVE(n)		u64 android_backport_reserved##n
+#define _ANDROID_BACKPORT_RESERVE_ARRAY(n, s)	u8 __aligned(8) android_backport_reserved##n[s]
 
 /*
  * Macros to use _before_ the ABI is frozen
@@ -86,8 +87,12 @@
  */
 #ifdef CONFIG_ANDROID_KABI_RESERVE
 #define ANDROID_KABI_RESERVE(number)	_ANDROID_KABI_RESERVE(number)
+#define ANDROID_BACKPORT_RESERVE(number)		_ANDROID_BACKPORT_RESERVE(number)
+#define ANDROID_BACKPORT_RESERVE_ARRAY(number, bytes)	_ANDROID_BACKPORT_RESERVE_ARRAY(number, bytes)
 #else
 #define ANDROID_KABI_RESERVE(number)
+#define ANDROID_BACKPORT_RESERVE(number)
+#define ANDROID_BACKPORT_RESERVE_ARRAY(number, bytes)
 #endif
 
 

@@ -7,6 +7,7 @@
 #define _GUNYAH_RSC_MGR_H
 
 #include <linux/android_vendor.h>
+#include <linux/android_kabi.h>
 #include <linux/list.h>
 #include <linux/notifier.h>
 #include <linux/gunyah.h>
@@ -97,14 +98,14 @@ struct gh_rm_mem_parcel {
 	struct gh_rm_mem_entry *mem_entries;
 	u32 mem_handle;
 
-	ANDROID_BACKPORT_RESERVED(1);
-	ANDROID_BACKPORT_RESERVED(2);
-	ANDROID_BACKPORT_RESERVED(3);
-	ANDROID_BACKPORT_RESERVED(4);
-	ANDROID_BACKPORT_RESERVED(5);
-	ANDROID_BACKPORT_RESERVED(6);
-	ANDROID_BACKPORT_RESERVED(7);
-	ANDROID_BACKPORT_RESERVED(8);
+	ANDROID_BACKPORT_RESERVE(1);
+	ANDROID_BACKPORT_RESERVE(2);
+	ANDROID_BACKPORT_RESERVE(3);
+	ANDROID_BACKPORT_RESERVE(4);
+	ANDROID_BACKPORT_RESERVE(5);
+	ANDROID_BACKPORT_RESERVE(6);
+	ANDROID_BACKPORT_RESERVE(7);
+	ANDROID_BACKPORT_RESERVE(8);
 };
 
 /* RPC Calls */
@@ -160,10 +161,10 @@ struct gh_rm_platform_ops {
 	int (*pre_mem_share)(void *rm, struct gh_rm_mem_parcel *mem_parcel);
 	int (*post_mem_reclaim)(void *rm, struct gh_rm_mem_parcel *mem_parcel);
 
-	ANDROID_BACKPORT_RESERVED(1);
-	ANDROID_BACKPORT_RESERVED(2);
-	ANDROID_BACKPORT_RESERVED(3);
-	ANDROID_BACKPORT_RESERVED(4);
+	ANDROID_BACKPORT_RESERVE(1);
+	ANDROID_BACKPORT_RESERVE(2);
+	ANDROID_BACKPORT_RESERVE(3);
+	ANDROID_BACKPORT_RESERVE(4);
 };
 
 #if IS_ENABLED(CONFIG_GUNYAH_PLATFORM_HOOKS)
