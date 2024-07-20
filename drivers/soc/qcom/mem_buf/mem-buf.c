@@ -1158,7 +1158,7 @@ static int mem_buf_vmid_to_vmid(u32 mem_buf_vmid)
 	else
 		return -EINVAL;
 
-	ret = gh_rm_get_vmid(vm_name, &vmid);
+	ret = ghd_rm_get_vmid(vm_name, &vmid);
 	if (!ret)
 		return vmid;
 	return ret;

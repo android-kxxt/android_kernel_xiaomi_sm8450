@@ -188,12 +188,12 @@ static int mem_buf_assign_mem_gunyah(int op, struct sg_table *sgt,
 
 	pr_debug("%s: Invoking Gunyah Lend/Share\n", __func__);
 	if (op == GH_RM_TRANS_TYPE_LEND)
-		ret = gh_rm_mem_lend(GH_RM_MEM_TYPE_NORMAL, arg->flags,
+		ret = ghd_rm_mem_lend(GH_RM_MEM_TYPE_NORMAL, arg->flags,
 				     arg->label, gh_acl, gh_sgl,
 				     NULL /* Default memory attributes */,
 				     &arg->memparcel_hdl);
 	else if (op == GH_RM_TRANS_TYPE_SHARE)
-		ret = gh_rm_mem_share(GH_RM_MEM_TYPE_NORMAL, arg->flags,
+		ret = ghd_rm_mem_share(GH_RM_MEM_TYPE_NORMAL, arg->flags,
 				     arg->label, gh_acl, gh_sgl,
 				     NULL /* Default memory attributes */,
 				     &arg->memparcel_hdl);
@@ -321,7 +321,7 @@ int mem_buf_unassign_mem(struct sg_table *sgt, int *src_vmids,
 
 	if (memparcel_hdl != MEM_BUF_MEMPARCEL_INVALID) {
 		pr_debug("%s: Beginning gunyah reclaim\n", __func__);
-		ret = gh_rm_mem_reclaim(memparcel_hdl, 0);
+		ret = ghd_rm_mem_reclaim(memparcel_hdl, 0);
 		if (ret) {
 			pr_err("%s: Gunyah reclaim failed\n", __func__);
 			return ret;
