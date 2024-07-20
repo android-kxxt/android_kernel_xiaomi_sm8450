@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -30,6 +31,7 @@ int gh_arch_validate_vm_exited_notif(size_t payload_size,
 			return -EINVAL;
 		}
 		vm_exited_payload->exit_type = GH_RM_VM_EXIT_TYPE_SYSTEM_RESET;
+		fallthrough;
 	case GH_RM_VM_EXIT_TYPE_PSCI_SYSTEM_RESET:
 		vm_exited_payload->exit_type = GH_RM_VM_EXIT_TYPE_SYSTEM_RESET;
 		break;

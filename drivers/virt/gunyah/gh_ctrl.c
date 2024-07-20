@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "gunyah: " fmt
@@ -12,12 +13,12 @@
 #include <linux/of.h>
 #include <linux/printk.h>
 #include <linux/slab.h>
-#include <linux/gunyah/gh_errno.h>
+#include <linux/gunyah.h>
 #include "hcall_ctrl.h"
 
 #define QC_HYP_SMCCC_CALL_UID                                                  \
 	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_32,              \
-			   ARM_SMCCC_OWNER_VENDOR_HYP, 0xff01)
+			   ARM_SMCCC_OWNER_VENDOR_HYP, 0x3f01)
 #define QC_HYP_SMCCC_REVISION                                                  \
 	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_32,              \
 			   ARM_SMCCC_OWNER_VENDOR_HYP, 0xff03)
@@ -26,6 +27,17 @@
 #define QC_HYP_UID1 0x0b37571b
 #define QC_HYP_UID2 0x946f609b
 #define QC_HYP_UID3 0x54539de6
+
+#define QC_HYP1_UID0 0xbd54bd19
+#define QC_HYP1_UID1 0x1b57370b
+#define QC_HYP1_UID2 0x9b606f94
+#define QC_HYP1_UID3 0xe69d5354
+
+/* Use */
+#undef GH_API_INFO_API_VERSION
+#undef GH_API_INFO_BIG_ENDIAN
+#undef GH_API_INFO_IS_64BIT
+#undef GH_API_INFO_VARIANT
 
 #define GH_API_INFO_API_VERSION(x)	(((x) >> 0) & 0x3fff)
 #define GH_API_INFO_BIG_ENDIAN(x)	(((x) >> 14) & 1)
@@ -136,18 +148,18 @@ static void gh_control_hyp_uart(int val)
 
 static int gh_dbgfs_trace_class_set(void *data, u64 val)
 {
-	return gh_remap_error(gh_hcall_trace_update_class_flags(val, 0, NULL));
+	return gh_error_remap(gh_hcall_trace_update_class_flags(val, 0, NULL));
 }
 
 static int gh_dbgfs_trace_class_clear(void *data, u64 val)
 {
-	return gh_remap_error(gh_hcall_trace_update_class_flags(0, val, NULL));
+	return gh_error_remap(gh_hcall_trace_update_class_flags(0, val, NULL));
 }
 
 static int gh_dbgfs_trace_class_get(void *data, u64 *val)
 {
 	*val = 0;
-	return gh_remap_error(gh_hcall_trace_update_class_flags(0, 0, val));
+	return gh_error_remap(gh_hcall_trace_update_class_flags(0, 0, val));
 }
 
 static int gh_dbgfs_hyp_uart_set(void *data, u64 val)
@@ -240,6 +252,9 @@ static int __init gh_ctrl_init(void)
 	if ((res.a0 == QC_HYP_UID0) && (res.a1 == QC_HYP_UID1) &&
 	    (res.a2 == QC_HYP_UID2) && (res.a3 == QC_HYP_UID3))
 		qc_hyp_calls = true;
+	else if ((res.a0 == QC_HYP1_UID0) && (res.a1 == QC_HYP1_UID1) &&
+	    (res.a2 == QC_HYP1_UID2) && (res.a3 == QC_HYP1_UID3))
+		qc_hyp_calls = true;
 
 	if (qc_hyp_calls) {
 		ret = gh_sysfs_register();
@@ -264,5 +279,5 @@ static void __exit gh_ctrl_exit(void)
 }
 module_exit(gh_ctrl_exit);
 
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Qualcomm Technologies, Inc. Gunyah Hypervisor Control Driver");

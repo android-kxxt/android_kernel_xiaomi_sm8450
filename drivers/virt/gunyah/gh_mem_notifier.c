@@ -153,5 +153,5 @@ static void __exit gh_mem_notifier_exit(void)
 }
 module_exit(gh_mem_notifier_exit);
 
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Qualcomm Technologies, Inc. Gunyah Memory Notifier");

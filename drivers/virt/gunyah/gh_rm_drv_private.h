@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __GH_RM_DRV_PRIVATE_H
@@ -13,6 +14,7 @@
 #include <linux/gunyah/gh_common.h>
 
 extern bool gh_rm_core_initialized;
+extern struct gh_rm *rm;
 
 /* Resource Manager Header */
 struct gh_rm_rpc_hdr {
@@ -65,6 +67,7 @@ struct gh_vm_property {
 #define GH_RM_RPC_MSG_ID_CALL_MEM_RELEASE		0x51000014
 #define GH_RM_RPC_MSG_ID_CALL_MEM_RECLAIM		0x51000015
 #define GH_RM_RPC_MSG_ID_CALL_MEM_NOTIFY		0x51000017
+#define GH_RM_RPC_MSG_ID_CALL_MEM_APPEND		0x51000018
 
 /* Message IDs: extensions for hyp-assign */
 #define GH_RM_RPC_MSG_ID_CALL_MEM_QCOM_LOOKUP_SGL	0x5100001A
@@ -75,6 +78,9 @@ struct gh_vm_property {
 #define GH_RM_RPC_MSG_ID_CALL_VM_START			0x56000004
 #define GH_RM_RPC_MSG_ID_CALL_VM_STOP			0x56000005
 #define GH_RM_RPC_MSG_ID_CALL_VM_RESET			0x56000006
+#define GH_RM_RPC_MSG_ID_CALL_VM_CONFIG_IMAGE		0x56000009
+#define GH_RM_RPC_MSG_ID_CALL_VM_AUTH_IMAGE		0x5600000A
+#define GH_RM_RPC_MSG_ID_CALL_VM_INIT			0x5600000B
 
 /* Message IDs: VM Query */
 #define GH_RM_RPC_MSG_ID_CALL_VM_GET_ID			0x56000010
@@ -85,6 +91,16 @@ struct gh_vm_property {
 #define GH_RM_RPC_MSG_ID_CALL_VM_GET_HYP_RESOURCES	0x56000020
 #define GH_RM_RPC_MSG_ID_CALL_VM_LOOKUP_HYP_CAPIDS	0x56000021
 #define GH_RM_RPC_MSG_ID_CALL_VM_LOOKUP_HYP_IRQS	0X56000022
+#define GH_RM_RPC_MSG_ID_CALL_VM_GET_VMID		0x56000024
+
+/* Message IDs: vRTC Configuration */
+#define GH_RM_RPC_MSG_ID_CALL_VM_SET_TIME_BASE		0x56000030
+
+/* Message IDs: Minidump */
+#define GH_RM_RPC_MSG_ID_CALL_VM_MINIDUMP_GET_INFO		0x56000040
+#define GH_RM_RPC_MSG_ID_CALL_VM_MINIDUMP_REGISTER_RANGE	0x56000041
+#define GH_RM_RPC_MSG_ID_CALL_VM_MINIDUMP_DEREGISTER_SLOT	0x56000042
+#define GH_RM_RPC_MSG_ID_CALL_VM_MINIDUMP_GET_SLOT_NUMBER	0x56000043
 
 /* Message IDs: VM Configuration */
 #define GH_RM_RPC_MSG_ID_CALL_VM_IRQ_ACCEPT		0x56000050
@@ -119,6 +135,33 @@ struct gh_vm_allocate_resp_payload {
 
 /* Call: VM_DEALLOCATE */
 struct gh_vm_deallocate_req_payload {
+	gh_vmid_t vmid;
+	u16 reserved;
+} __packed;
+
+/* Call: VM_CONFIG_IMAGE */
+struct gh_vm_config_image_req_payload {
+	gh_vmid_t vmid;
+	u16 auth_mech;
+	u32 mem_handle;
+	u32 image_offset_low;
+	u32 image_offset_high;
+	u32 image_size_low;
+	u32 image_size_high;
+	u32 dtb_offset_low;
+	u32 dtb_offset_high;
+	u32 dtb_size_low;
+	u32 dtb_size_high;
+} __packed;
+
+/* Call: VM_AUTH_IMAGE */
+struct gh_vm_auth_image_req_payload_hdr {
+	gh_vmid_t vmid;
+	u16 num_auth_params;
+} __packed;
+
+/* Call: VM_INIT */
+struct gh_vm_init_req_payload {
 	gh_vmid_t vmid;
 	u16 reserved;
 } __packed;
@@ -233,6 +276,7 @@ struct gh_vm_lookup_resp_payload {
 #define GH_RM_RES_TYPE_VCPU		4
 #define GH_RM_RES_TYPE_VPMGRP		5
 #define GH_RM_RES_TYPE_VIRTIO_MMIO	6
+#define GH_RM_RES_TYPE_WATCHDOG		8
 
 struct gh_vm_get_hyp_res_req_payload {
 	gh_vmid_t vmid;
@@ -258,6 +302,17 @@ struct gh_vm_get_hyp_res_resp_entry {
 struct gh_vm_get_hyp_res_resp_payload {
 	u32 n_resource_entries;
 	struct gh_vm_get_hyp_res_resp_entry resp_entries[];
+} __packed;
+
+/* Call: VM_SET_TIME_BASE */
+struct gh_vm_set_time_base_req_payload {
+	gh_vmid_t vmid;
+	u8 reserved0;
+	u8 reserved1;
+	u32 time_base_low;
+	u32 time_base_high;
+	u32 arch_timer_ref_low;
+	u32 arch_timer_ref_high;
 } __packed;
 
 /* Call: VM_IRQ_ACCEPT */
@@ -351,11 +406,28 @@ struct gh_mem_accept_req_payload_hdr {
 	u32 validate_label;
 } __packed;
 
+#define GH_MEM_ACCEPT_RESP_INCOMPLETE BIT(0)
+/*
+ * Identical to gh_sgl_desc except a reserved field is replaced with flags.
+ */
 struct gh_mem_accept_resp_payload {
 	u16 n_sgl_entries;
-	u16 reserved;
+	u8 flags;
+	u8 reserved;
 } __packed;
 
+/*
+ * Mem Accept may not be able to return the sgl_desc in a single call.
+ * These helpers gather the results across many calls.
+ */
+struct gh_sgl_frag_entry {
+	struct list_head list;
+	struct gh_sgl_desc *sgl_desc;
+};
+struct gh_sgl_fragment {
+	struct list_head list;
+	u16 n_sgl_entries;
+};
 /*
  * Call: MEM_LEND/MEM_SHARE
  *
@@ -375,6 +447,19 @@ struct gh_mem_share_resp_payload {
 	gh_memparcel_handle_t memparcel_handle;
 } __packed;
 
+/*
+ * Call: MEM_APPEND
+ *
+ * Split up the whole payload into a header and several trailing structs
+ * to simplify allocation and treatment of packets with multiple flexible
+ * array members.
+ */
+struct gh_mem_append_req_payload_hdr {
+	gh_memparcel_handle_t memparcel_handle;
+	u32 flags:8;
+	u32 reserved:24;
+} __packed;
+
 /* Call: MEM_NOTIFY */
 struct gh_mem_notify_req_payload {
 	gh_memparcel_handle_t memparcel_handle;
@@ -385,13 +470,52 @@ struct gh_mem_notify_req_payload {
 
 /* End Message ID headers */
 
+/* Call: MINIDUMP_REGISTER_RANGE */
+struct gh_minidump_get_info_req_payload {
+	u32 reserved;
+} __packed;
+
+struct gh_minidump_get_info_resp_payload {
+	u16 slot_num;
+	u16 reserved;
+} __packed;
+
+struct gh_minidump_register_range_req_hdr {
+	u64 base_ipa;
+	u64 region_size;
+	u32 name_size : 8;
+	u32 name_offset : 8;
+	u32 reserved : 16;
+} __packed;
+
+struct gh_minidump_register_range_resp_payload {
+	u16 slot_num;
+	u16 reserved;
+} __packed;
+
+struct gh_minidump_deregister_slot_req_payload {
+	u16 slot_num;
+	u16 reserved;
+} __packed;
+
+struct gh_minidump_get_slot_req_payload {
+	u32 name_len : 8;
+	u32 reserved1 : 24;
+	u16 starting_slot;
+	u16 reserved2;
+};
+
+struct gh_minidump_get_slot_resp_payload {
+	u16 slot_number;
+	u16 reserved;
+};
+
+/* End Message ID headers */
+
 /* Common function declerations */
 void gh_init_vm_prop_table(void);
 int gh_update_vm_prop_table(enum gh_vm_names vm_name,
 			struct gh_vm_property *vm_prop);
-void *gh_rm_call(gh_rm_msgid_t message_id,
-			void *req_buff, size_t req_buff_size,
-			size_t *resp_buff_size, int *reply_err_code);
 struct gh_vm_get_id_resp_entry *
 gh_rm_vm_get_id(gh_vmid_t vmid, u32 *out_n_entries);
 int gh_rm_vm_lookup(enum gh_vm_lookup_type type, const void *name,

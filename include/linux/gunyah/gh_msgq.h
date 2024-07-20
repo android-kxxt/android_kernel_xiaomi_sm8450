@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -17,6 +18,13 @@ enum gh_msgq_label {
 	GH_MSGQ_LABEL_MEMBUF,
 	GH_MSGQ_LABEL_DISPLAY,
 	GH_MSGQ_LABEL_VSOCK,
+	GH_MSGQ_LABEL_TEST_TUIVM,
+	GH_MSGQ_LABEL_TEST_OEMVM,
+	GH_MSGQ_LABEL_MMRM,
+	GH_MSGQ_LABEL_EVA,
+	GH_MSGQ_VCPU_SCHED_TEST,
+	GH_MSGQ_VCPU_SCHED_TEST_OEMVM,
+	GH_MSGQ_LABEL_SMMU_PROXY,
 	GH_MSGQ_LABEL_MAX
 };
 

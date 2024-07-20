@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- *
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -10,7 +10,7 @@
 #include <linux/interrupt.h>
 
 #include <linux/gunyah/gh_dbl.h>
-#include <linux/gunyah/gh_errno.h>
+#include <linux/gunyah_rsc_mgr.h>
 #include "hcall_dbl.h"
 
 struct gh_dbl_desc {
@@ -78,9 +78,8 @@ static int gh_dbl_validate_params(struct gh_dbl_desc *client_desc,
 			goto err;
 		}
 
-		if ((cap_table_entry->rx_cap_id == GH_CAPID_INVAL) &&
-			(flags & GH_DBL_NONBLOCK)) {
-			ret = -EAGAIN;
+		if (flags & GH_DBL_NONBLOCK) {
+			ret = cap_table_entry->rx_cap_id == GH_CAPID_INVAL ? -EAGAIN : 0;
 			goto err;
 		}
 
@@ -96,9 +95,8 @@ static int gh_dbl_validate_params(struct gh_dbl_desc *client_desc,
 			goto err;
 		}
 
-		if ((cap_table_entry->tx_cap_id == GH_CAPID_INVAL) &&
-			(flags & GH_DBL_NONBLOCK)) {
-			ret = -EAGAIN;
+		if (flags & GH_DBL_NONBLOCK) {
+			ret = cap_table_entry->tx_cap_id == GH_CAPID_INVAL ? -EAGAIN : 0;
 			goto err;
 		}
 
@@ -150,7 +148,7 @@ int gh_dbl_read_and_clean(void *dbl_client_desc, gh_dbl_flags_t *clear_flags,
 	gh_ret = gh_hcall_dbl_recv(cap_table_entry->rx_cap_id,
 					*clear_flags, &recv_resp);
 
-	ret = gh_remap_error(gh_ret);
+	ret = gh_error_remap(gh_ret);
 	if (ret != 0)
 		pr_err("%s: Hypercall failed, ret = %d\n", __func__, gh_ret);
 	else
@@ -193,7 +191,7 @@ int gh_dbl_set_mask(void *dbl_client_desc, gh_dbl_flags_t enable_mask,
 	gh_ret = gh_hcall_dbl_mask(cap_table_entry->rx_cap_id,
 						enable_mask, ack_mask);
 
-	ret = gh_remap_error(gh_ret);
+	ret = gh_error_remap(gh_ret);
 	if (ret != 0)
 		pr_err("%s: Hypercall failed ret = %d\n", __func__, gh_ret);
 
@@ -237,7 +235,7 @@ int gh_dbl_send(void *dbl_client_desc, gh_dbl_flags_t *newflags,
 	gh_ret = gh_hcall_dbl_send(cap_table_entry->tx_cap_id, *newflags,
 								&send_resp);
 
-	ret = gh_remap_error(gh_ret);
+	ret = gh_error_remap(gh_ret);
 	if (ret != 0)
 		pr_err("%s: Hypercall failed ret = %d\n", __func__, gh_ret);
 	else
@@ -274,7 +272,7 @@ int gh_dbl_reset(void *dbl_client_desc, const unsigned long flags)
 
 	gh_ret = gh_hcall_dbl_reset(cap_table_entry->rx_cap_id);
 
-	ret = gh_remap_error(gh_ret);
+	ret = gh_error_remap(gh_ret);
 	if (ret != 0)
 		pr_err("%s: Hypercall failed ret = %d\n", __func__, gh_ret);
 
@@ -359,7 +357,7 @@ EXPORT_SYMBOL(gh_dbl_tx_register);
  * @rx_cb: Callback of the client when there is a vIRQ on doorbell
  * @priv: Private data of the driver
  *
- * The function returns a descriptor for the clients to receieve a message.
+ * The function returns a descriptor for the clients to receive a message.
  * Else, returns -EBUSY if some other client is already registered
  * to this label, and -EINVAL for invalid arguments. The caller should check
  * the return value using IS_ERR_OR_NULL() and PTR_ERR() to extract the error
@@ -709,4 +707,4 @@ static void __exit gh_dbl_exit(void)
 module_exit(gh_dbl_exit);
 
 MODULE_DESCRIPTION("Qualcomm Technologies, Inc. Gunyah Doorbell Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

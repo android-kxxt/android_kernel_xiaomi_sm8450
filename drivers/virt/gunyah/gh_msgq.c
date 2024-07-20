@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -13,7 +14,7 @@
 #include <linux/ratelimit.h>
 
 #include <linux/gunyah/gh_msgq.h>
-#include <linux/gunyah/gh_errno.h>
+#include <linux/gunyah_rsc_mgr.h>
 #include "hcall_msgq.h"
 
 /* HVC call specific mask: 0 to 31 */
@@ -147,7 +148,7 @@ static int __gh_msgq_recv(struct gh_msgq_cap_table *cap_table_entry,
 		ret = -EAGAIN;
 		break;
 	default:
-		ret = gh_remap_error(gh_ret);
+		ret = gh_error_remap(gh_ret);
 	}
 
 	spin_unlock_irqrestore(&cap_table_entry->rx_lock, flags);
@@ -244,7 +245,7 @@ int gh_msgq_recv(void *msgq_client_desc,
 	} while (ret == -EAGAIN);
 
 	if (!ret)
-		print_hex_dump_debug("gh_msgq_recv: ", DUMP_PREFIX_OFFSET,
+		print_hex_dump_debug(__func__, DUMP_PREFIX_OFFSET,
 				     4, 1, buff, *recv_size, false);
 
 	return ret;
@@ -283,7 +284,7 @@ static int __gh_msgq_send(struct gh_msgq_cap_table *cap_table_entry,
 		ret = -EAGAIN;
 		break;
 	default:
-		ret = gh_remap_error(gh_ret);
+		ret = gh_error_remap(gh_ret);
 	}
 
 	spin_unlock_irqrestore(&cap_table_entry->tx_lock, flags);
@@ -637,55 +638,6 @@ err_unlock:
 }
 EXPORT_SYMBOL(gh_msgq_reset_cap_info);
 
-static int gh_msgq_probe_direction(struct platform_device *pdev, int label,
-				   int direction, int idx)
-{
-	int irq, ret;
-	u64 capid;
-
-	irq = platform_get_irq(pdev, idx);
-	if (irq < 0) {
-		dev_err(&pdev->dev, "Failed to get the IRQ%d. ret: %d\n",
-			idx, irq);
-		return irq;
-	}
-
-	ret = of_property_read_u64_index(pdev->dev.of_node, "reg", idx, &capid);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed to get capid[%d]\n", idx);
-		return ret;
-	}
-
-	return gh_msgq_populate_cap_info(label, capid, direction, irq);
-}
-
-int gh_msgq_probe(struct platform_device *pdev, int label)
-{
-	int ret, idx = 0;
-	struct device_node *node = pdev->dev.of_node;
-	bool duplex;
-
-	duplex = of_property_read_bool(node, "qcom,is-full-duplex");
-
-	if (duplex || of_property_read_bool(node, "qcom,is-sender")) {
-		ret = gh_msgq_probe_direction(pdev, label, GH_MSGQ_DIRECTION_TX,
-					      idx);
-		if (ret)
-			return ret;
-		idx++;
-	}
-
-	if (duplex || of_property_read_bool(node, "qcom,is-receiver")) {
-		ret = gh_msgq_probe_direction(pdev, label, GH_MSGQ_DIRECTION_RX,
-					      idx);
-		if (ret)
-			return ret;
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL(gh_msgq_probe);
-
 static void gh_msgq_cleanup(void)
 {
 	struct gh_msgq_cap_table *cap_table_entry;
@@ -700,17 +652,17 @@ static void gh_msgq_cleanup(void)
 	spin_unlock(&gh_msgq_cap_list_lock);
 }
 
-static int __init gh_msgq_init(void)
+static int __init ghd_msgq_init(void)
 {
 	return 0;
 }
-module_init(gh_msgq_init);
+module_init(ghd_msgq_init);
 
-static void __exit gh_msgq_exit(void)
+static void __exit ghd_msgq_exit(void)
 {
 	gh_msgq_cleanup();
 }
-module_exit(gh_msgq_exit);
+module_exit(ghd_msgq_exit);
 
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Qualcomm Technologies, Inc. Gunyah Message Queue Driver");

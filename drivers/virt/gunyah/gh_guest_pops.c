@@ -11,7 +11,6 @@
 #include <linux/input.h>
 #include <linux/notifier.h>
 
-#include <linux/gunyah/gh_vm.h>
 #include <linux/gunyah/gh_rm_drv.h>
 
 #define GH_GUEST_POPS_POFF_BUTTON_HOLD_SHUTDOWN_DELAY_MS	1000
@@ -64,7 +63,7 @@ gh_guest_pops_vm_shutdown(struct gh_rm_notif_vm_shutdown_payload *vm_shutdown)
 		return gh_guest_pops_handle_stop_crash();
 	case GH_VM_STOP_RESTART:
 		return gh_guest_pops_handle_stop_shutdown(vm_shutdown->stop_reason);
-	};
+	}
 
 	return 0;
 }
@@ -91,19 +90,21 @@ static int __init gh_guest_pops_init_poff(void)
 	input_set_capability(gh_vm_poff_input, EV_KEY, KEY_POWER);
 
 	ret = input_register_device(gh_vm_poff_input);
-	if (ret) {
-		input_free_device(gh_vm_poff_input);
-		return ret;
-	}
+	if (ret)
+		goto fail_register;
 
 	rm_nb.notifier_call = gh_guest_pops_rm_notifer_fn;
 	ret = gh_rm_register_notifier(&rm_nb);
-	if (ret) {
-		input_unregister_device(gh_vm_poff_input);
-		return ret;
-	}
+	if (ret)
+		goto fail_init;
 
 	return 0;
+
+fail_init:
+	input_unregister_device(gh_vm_poff_input);
+fail_register:
+	input_free_device(gh_vm_poff_input);
+	return ret;
 }
 
 static ssize_t gh_guest_set_app_status(struct kobject *kobj,
@@ -185,6 +186,7 @@ static void gh_guest_pops_exit_poff(void)
 	gh_rm_unregister_notifier(&rm_nb);
 
 	input_unregister_device(gh_vm_poff_input);
+	input_free_device(gh_vm_poff_input);
 }
 
 static int __init gh_guest_pops_init(void)
@@ -222,4 +224,4 @@ static void __exit gh_guest_pops_exit(void)
 }
 module_exit(gh_guest_pops_exit);
 
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- *
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __GH_DBL_H
@@ -17,7 +17,11 @@ enum gh_dbl_label {
 	GH_DBL_TUI_NEURON_BLK1,
 	GH_DBL_TUI_QRTR,
 	GH_DBL_TEST_TUIVM,
-	GH_DBL_TEST_TESTVM,
+	GH_DBL_TEST_OEMVM,
+	GH_DBL_HW_FENCE,
+	GH_DBL_TUI_DDUMP,
+	GH_DBL_OEMVM_QRTR,
+	GH_DBL_VM_PANIC_NOTIFY,
 	GH_DBL_LABEL_MAX
 };
 

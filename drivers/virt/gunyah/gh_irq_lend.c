@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -176,7 +177,7 @@ int gh_irq_lend_v2(enum gh_irq_label label, enum gh_vm_names name,
 		return -EINVAL;
 	}
 
-	ret = gh_rm_get_vmid(name, &entry->vmid);
+	ret = ghd_rm_get_vmid(name, &entry->vmid);
 	if (ret) {
 		entry->state = GH_IRQ_STATE_NONE;
 		spin_unlock_irqrestore(&gh_irq_lend_lock, flags);
@@ -333,7 +334,7 @@ EXPORT_SYMBOL(gh_irq_wait_for_lend);
 int gh_irq_accept(enum gh_irq_label label, int irq, int type)
 {
 	struct gh_irq_entry *entry;
-	u32 virq;
+	int virq;
 
 	if (label >= GH_IRQ_LABEL_MAX)
 		return -EINVAL;
@@ -451,5 +452,5 @@ static void gh_irq_lend_exit(void)
 }
 module_exit(gh_irq_lend_exit);
 
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Qualcomm Technologies, Inc. Gunyah IRQ Lending Library");

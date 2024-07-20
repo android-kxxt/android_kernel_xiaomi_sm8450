@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2021-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
 #include <soc/qcom/watchdog.h>
 #include <linux/arm-smccc.h>
-#include <linux/gunyah/gh_errno.h>
+#include <linux/gunyah_rsc_mgr.h>
 #include <linux/kernel.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
@@ -74,7 +75,7 @@ static int gh_set_wdt_bark(u32 time, struct msm_watchdog_data *wdog_dd)
 	bark_time = (u16) time;
 	res = gh_wdt_call(VIRT_WDT_SET_TIME, 0, bark_time, VIRT_WDT_NO_CHANGE);
 	hret = res.a0;
-	ret = gh_remap_error(hret);
+	ret = gh_error_remap(hret);
 	if (hret) {
 		dev_err(wdog_dd->dev, "failed to set bark time for vDOG, hret = %d ret = %d\n",
 			hret, ret);
@@ -104,7 +105,7 @@ static int gh_set_wdt_bite(u32 time, struct msm_watchdog_data *wdog_dd)
 	bite_time = (u16) time;
 	res = gh_wdt_call(VIRT_WDT_SET_TIME, 0, VIRT_WDT_NO_CHANGE, bite_time);
 	hret = res.a0;
-	ret = gh_remap_error(hret);
+	ret = gh_error_remap(hret);
 	if (hret) {
 		dev_err(wdog_dd->dev, "failed to set bite time for vWDOG, hret = %d ret = %d\n",
 			hret, ret);
@@ -129,7 +130,7 @@ static int gh_reset_wdt(struct msm_watchdog_data *wdog_dd)
 
 	res = gh_wdt_call(VIRT_WDT_PET, 0, 0, 0);
 	hret = res.a0;
-	ret = gh_remap_error(hret);
+	ret = gh_error_remap(hret);
 	if (hret) {
 		dev_err(wdog_dd->dev, "failed to reset vWDOG, hret = %d ret = %d\n",
 			hret, ret);
@@ -166,7 +167,7 @@ static int gh_enable_wdt(u32 state, struct msm_watchdog_data *wdog_dd)
 	}
 	res = gh_wdt_call(VIRT_WDT_CONTROL, 3, 0, 0);
 	hret = res.a0;
-	ret = gh_remap_error(hret);
+	ret = gh_error_remap(hret);
 	if (hret) {
 		dev_err(wdog_dd->dev, "failed enabling vWDOG, hret = %d ret = %d\n",
 			hret, ret);
@@ -202,7 +203,7 @@ static int gh_disable_wdt(struct msm_watchdog_data *wdog_dd)
 	}
 	res = gh_wdt_call(VIRT_WDT_CONTROL, 2, 0, 0);
 	hret = res.a0;
-	ret = gh_remap_error(hret);
+	ret = gh_error_remap(hret);
 	if (hret) {
 		dev_err(wdog_dd->dev, "failed disabling VDOG, hret = %d ret = %d\n",
 			hret, ret);
@@ -227,7 +228,7 @@ static int gh_show_wdt_status(struct msm_watchdog_data *wdog_dd)
 
 	res = gh_wdt_call(VIRT_WDT_STATUS, 0, 0, 0);
 	hret = res.a0;
-	ret = gh_remap_error(hret);
+	ret = gh_error_remap(hret);
 	if (hret) {
 		dev_err(wdog_dd->dev, "failed to get vWDOG status, hret = %d ret = %d\n",
 			hret, ret);

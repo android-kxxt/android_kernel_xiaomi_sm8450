@@ -17,5 +17,5 @@ static void __exit gh_arm_exit(void)
 }
 module_exit(gh_arm_exit);
 
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Qualcomm Technologies, Inc. Gunyah ARM64 Driver");
