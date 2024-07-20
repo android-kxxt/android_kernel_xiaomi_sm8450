@@ -160,6 +160,10 @@ extern int qcom_scm_assign_mem(phys_addr_t mem_addr, size_t mem_sz,
 			       unsigned int *src,
 			       const struct qcom_scm_vmperm *newvm,
 			       unsigned int dest_cnt);
+extern int qcom_scm_assign_mem64(phys_addr_t mem_addr, size_t mem_sz,
+			       u64 *src,
+			       const struct qcom_scm_vmperm *newvm,
+			       unsigned int dest_cnt);
 extern int qcom_scm_mem_protect_sd_ctrl(u32 devid, phys_addr_t mem_addr,
 					u64 mem_size, u32 vmid);
 extern int qcom_scm_get_feat_version_cp(u64 *version);
