@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* Copyright (c) 2020-2021, The Linux Foundation. All rights reserved. */
+/*
+ * Copyright (c) 2020-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ */
 
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
@@ -12,8 +14,10 @@
 #include <linux/types.h>
 #include <linux/skbuff.h>
 #include <linux/gunyah/gh_rm_drv.h>
+#include <linux/gunyah/gh_vm.h>
 #include <linux/gunyah/gh_dbl.h>
 #include <soc/qcom/secure_buffer.h>
+#include <linux/qcom_scm.h>
 #include "qrtr.h"
 
 #define GUNYAH_MAGIC_KEY	0x24495043 /* "$IPC" */
@@ -30,7 +34,8 @@
 #define NOTIFY_1_IDX	0x6
 #define QRTR_DBL_MASK	0x1
 
-#define MAX_PKT_SZ	SZ_64K
+/* Add potential padding and header space to 64k */
+#define MAX_PKT_SZ	(SZ_64K + SZ_32)
 
 struct gunyah_ring {
 	void *buf;
@@ -58,10 +63,13 @@ struct gunyah_pipe {
  * @size: fifo size.
  * @master: primary vm indicator.
  * @peer_name: name of vm peer.
- * @rm_nb: notifier block for vm status from rm
+ * @vm_nb: notifier block for vm status from rm
+ * @state_lock: lock to protect registered state
+ * @registered: state of endpoint
  * @label: label for gunyah resources
  * @tx_dbl: doorbell for tx notifications.
  * @rx_dbl: doorbell for rx notifications.
+ * @dbl_lock: lock to prevent read races.
  * @tx_pipe: TX gunyah specific info.
  * @rx_pipe: RX gunyah specific info.
  */
@@ -76,12 +84,17 @@ struct qrtr_gunyah_dev {
 	size_t size;
 	bool master;
 	u32 peer_name;
-	struct notifier_block rm_nb;
+	struct notifier_block vm_nb;
+	/* lock to protect registered */
+	struct mutex state_lock;
+	bool registered;
 
 	u32 label;
 	void *tx_dbl;
 	void *rx_dbl;
 	struct work_struct work;
+	/* lock to protect dbl_running */
+	spinlock_t dbl_lock;
 
 	struct gunyah_pipe tx_pipe;
 	struct gunyah_pipe rx_pipe;
@@ -98,7 +111,8 @@ static void qrtr_gunyah_kick(struct qrtr_gunyah_dev *qdev)
 
 	ret = gh_dbl_send(qdev->tx_dbl, &dbl_mask, GH_DBL_NONBLOCK);
 	if (ret) {
-		dev_err(qdev->dev, "failed to raise doorbell %d\n", ret);
+		if (ret != EAGAIN)
+			dev_err(qdev->dev, "failed to raise doorbell %d\n", ret);
 		if (!qdev->master)
 			schedule_work(&qdev->work);
 	}
@@ -192,7 +206,7 @@ static size_t gunyah_tx_avail(struct gunyah_pipe *pipe)
 	else
 		avail -= FIFO_FULL_RESERVE;
 
-	if (WARN_ON_ONCE(avail > pipe->length))
+	if (WARN_ON_ONCE(head > pipe->length))
 		avail = 0;
 
 	return avail;
@@ -225,6 +239,62 @@ static void gunyah_tx_write(struct gunyah_pipe *pipe, const void *data,
 	*pipe->head = cpu_to_le32(head);
 }
 
+static size_t gunyah_sg_copy_toio(struct scatterlist *sg, unsigned int nents,
+				  void *buf, size_t buflen, off_t skip)
+{
+	unsigned int sg_flags = SG_MITER_ATOMIC | SG_MITER_FROM_SG;
+	struct sg_mapping_iter miter;
+	unsigned int offset = 0;
+
+	sg_miter_start(&miter, sg, nents, sg_flags);
+
+	if (!sg_miter_skip(&miter, skip))
+		return 0;
+
+	while ((offset < buflen) && sg_miter_next(&miter)) {
+		unsigned int len;
+
+		len = min(miter.length, buflen - offset);
+		memcpy_toio(buf + offset, miter.addr, len);
+		offset += len;
+	}
+
+	sg_miter_stop(&miter);
+
+	return offset;
+}
+
+static void gunyah_sg_write(struct gunyah_pipe *pipe, struct scatterlist *sg,
+			    int offset, size_t count)
+{
+	size_t len;
+	u32 head;
+	int rc = 0;
+
+	head = le32_to_cpu(*pipe->head);
+	if (WARN_ON_ONCE(head > pipe->length))
+		return;
+
+	len = min_t(size_t, count, pipe->length - head);
+	if (len) {
+		rc = gunyah_sg_copy_toio(sg, sg_nents(sg), pipe->fifo + head,
+					 len, offset);
+		offset += rc;
+	}
+
+	if (len != count)
+		rc = gunyah_sg_copy_toio(sg, sg_nents(sg), pipe->fifo,
+					 count - len, offset);
+
+	head += count;
+	if (head >= pipe->length)
+		head -= pipe->length;
+
+	smp_wmb();
+
+	*pipe->head = cpu_to_le32(head);
+}
+
 static void gunyah_set_tx_notify(struct qrtr_gunyah_dev *qdev)
 {
 	*qdev->tx_pipe.read_notify = cpu_to_le32(1);
@@ -240,11 +310,15 @@ static bool gunyah_get_read_notify(struct qrtr_gunyah_dev *qdev)
 	return le32_to_cpu(*qdev->rx_pipe.read_notify);
 }
 
-static void gunyah_wait_for_tx_avail(struct qrtr_gunyah_dev *qdev)
+static int gunyah_wait_for_tx_avail(struct qrtr_gunyah_dev *qdev)
 {
+	int ret;
+
 	gunyah_set_tx_notify(qdev);
-	wait_event_timeout(qdev->tx_avail_notify,
-			   gunyah_tx_avail(&qdev->tx_pipe), 10 * HZ);
+	qrtr_gunyah_kick(qdev);
+	ret = wait_event_timeout(qdev->tx_avail_notify, gunyah_tx_avail(&qdev->tx_pipe), 10 * HZ);
+
+	return ret;
 }
 
 /* from qrtr to gunyah */
@@ -255,23 +329,20 @@ static int qrtr_gunyah_send(struct qrtr_endpoint *ep, struct sk_buff *skb)
 	int chunk_size;
 	int left_size;
 	int offset;
-
-	int rc;
+	int rc = 0;
 
 	qdev = container_of(ep, struct qrtr_gunyah_dev, ep);
-
-	rc = skb_linearize(skb);
-	if (rc) {
-		kfree_skb(skb);
-		return rc;
-	}
 
 	left_size = skb->len;
 	offset = 0;
 	while (left_size > 0) {
 		tx_avail = gunyah_tx_avail(&qdev->tx_pipe);
 		if (!tx_avail) {
-			gunyah_wait_for_tx_avail(qdev);
+			if (!gunyah_wait_for_tx_avail(qdev)) {
+				dev_err(qdev->dev, "transport stalled\n");
+				rc = -ETIMEDOUT;
+				break;
+			}
 			continue;
 		}
 		if (tx_avail < left_size)
@@ -279,7 +350,22 @@ static int qrtr_gunyah_send(struct qrtr_endpoint *ep, struct sk_buff *skb)
 		else
 			chunk_size = left_size;
 
-		gunyah_tx_write(&qdev->tx_pipe, skb->data + offset, chunk_size);
+		if (skb_is_nonlinear(skb)) {
+			struct scatterlist sg[MAX_SKB_FRAGS + 1];
+
+			sg_init_table(sg, skb_shinfo(skb)->nr_frags + 1);
+			rc = skb_to_sgvec(skb, sg, 0, skb->len);
+			if (rc < 0) {
+				pr_err("failed skb_to_sgvec rc:%d\n", rc);
+				break;
+			}
+			gunyah_sg_write(&qdev->tx_pipe, sg, offset,
+					chunk_size);
+		} else {
+			gunyah_tx_write(&qdev->tx_pipe, skb->data + offset,
+					chunk_size);
+		}
+
 		offset += chunk_size;
 		left_size -= chunk_size;
 
@@ -288,7 +374,7 @@ static int qrtr_gunyah_send(struct qrtr_endpoint *ep, struct sk_buff *skb)
 	gunyah_clr_tx_notify(qdev);
 	kfree_skb(skb);
 
-	return 0;
+	return (rc < 0) ? rc : 0;
 }
 
 static void qrtr_gunyah_read_new(struct qrtr_gunyah_dev *qdev)
@@ -303,7 +389,11 @@ static void qrtr_gunyah_read_new(struct qrtr_gunyah_dev *qdev)
 	gunyah_rx_peak(&qdev->rx_pipe, &hdr, 0, hdr_len);
 	pkt_len = qrtr_peek_pkt_size((void *)&hdr);
 	if ((int)pkt_len < 0 || pkt_len > MAX_PKT_SZ) {
-		dev_err(qdev->dev, "invalid pkt_len %zu\n", pkt_len);
+		/* Corrupted packet, reset the pipe and discard existing data */
+		rx_avail = gunyah_rx_avail(&qdev->rx_pipe);
+		dev_err(qdev->dev, "invalid pkt_len:%zu dropping:%zu bytes\n",
+			pkt_len, rx_avail);
+		gunyah_rx_advance(&qdev->rx_pipe, rx_avail);
 		return;
 	}
 
@@ -350,6 +440,9 @@ static void qrtr_gunyah_read_frag(struct qrtr_gunyah_dev *qdev)
 
 static void qrtr_gunyah_read(struct qrtr_gunyah_dev *qdev)
 {
+	unsigned long flags;
+
+	spin_lock_irqsave(&qdev->dbl_lock, flags);
 	wake_up_all(&qdev->tx_avail_notify);
 
 	while (gunyah_rx_avail(&qdev->rx_pipe)) {
@@ -361,24 +454,26 @@ static void qrtr_gunyah_read(struct qrtr_gunyah_dev *qdev)
 		if (gunyah_get_read_notify(qdev))
 			qrtr_gunyah_kick(qdev);
 	}
+	spin_unlock_irqrestore(&qdev->dbl_lock, flags);
 }
 
 static int qrtr_gunyah_share_mem(struct qrtr_gunyah_dev *qdev, gh_vmid_t self,
 				 gh_vmid_t peer)
 {
-	u32 src_vmlist[1] = {self};
-	int src_perms[2] = {PERM_READ | PERM_WRITE | PERM_EXEC};
-	int dst_vmlist[2] = {self, peer};
-	int dst_perms[2] = {PERM_READ | PERM_WRITE, PERM_READ | PERM_WRITE};
+	struct qcom_scm_vmperm src_vmlist[] = {{self,
+						PERM_READ | PERM_WRITE | PERM_EXEC}};
+	struct qcom_scm_vmperm dst_vmlist[] = {{self, PERM_READ | PERM_WRITE},
+					       {peer, PERM_READ | PERM_WRITE}};
+	u64 srcvmids = BIT(src_vmlist[0].vmid);
+	u64 dstvmids = BIT(dst_vmlist[0].vmid) | BIT(dst_vmlist[1].vmid);
 	struct gh_acl_desc *acl;
 	struct gh_sgl_desc *sgl;
 	int ret;
 
-	ret = hyp_assign_phys(qdev->res.start, resource_size(&qdev->res),
-			      src_vmlist, 1,
-			      dst_vmlist, dst_perms, 2);
+	ret = qcom_scm_assign_mem(qdev->res.start, resource_size(&qdev->res),
+				  &srcvmids, dst_vmlist, ARRAY_SIZE(dst_vmlist));
 	if (ret) {
-		pr_err("%s: hyp_assign_phys failed addr=%x size=%u err=%d\n",
+		pr_err("%s: qcom_scm_assign_mem failed addr=%x size=%u err=%d\n",
 		       __func__, qdev->res.start, qdev->size, ret);
 		return ret;
 	}
@@ -401,15 +496,16 @@ static int qrtr_gunyah_share_mem(struct qrtr_gunyah_dev *qdev, gh_vmid_t self,
 	sgl->sgl_entries[0].ipa_base = qdev->res.start;
 	sgl->sgl_entries[0].size = resource_size(&qdev->res);
 
-	ret = gh_rm_mem_share(GH_RM_MEM_TYPE_NORMAL, 0, qdev->label,
-			      acl, sgl, NULL, &qdev->memparcel);
+	ret = ghd_rm_mem_share(GH_RM_MEM_TYPE_NORMAL, 0, qdev->label,
+			       acl, sgl, NULL, &qdev->memparcel);
 	if (ret) {
 		pr_err("%s: gh_rm_mem_share failed addr=%x size=%u err=%d\n",
 		       __func__, qdev->res.start, qdev->size, ret);
 		/* Attempt to give resource back to HLOS */
-		hyp_assign_phys(qdev->res.start, resource_size(&qdev->res),
-				dst_vmlist, 2,
-				src_vmlist, src_perms, 1);
+		if (qcom_scm_assign_mem(qdev->res.start, resource_size(&qdev->res),
+					&dstvmids, src_vmlist, ARRAY_SIZE(src_vmlist)))
+			pr_err("%s: qcom_scm_assign_mem failed addr=%x size=%u err=%d\n",
+			       __func__, qdev->res.start, qdev->size, ret);
 	}
 
 	kfree(acl);
@@ -421,59 +517,67 @@ static int qrtr_gunyah_share_mem(struct qrtr_gunyah_dev *qdev, gh_vmid_t self,
 static void qrtr_gunyah_unshare_mem(struct qrtr_gunyah_dev *qdev,
 				    gh_vmid_t self, gh_vmid_t peer)
 {
-	int dst_perms[2] = {PERM_READ | PERM_WRITE | PERM_EXEC};
-	int src_vmlist[2] = {self, peer};
-	u32 dst_vmlist[1] = {self};
+	u64 src_vmlist = BIT(self);
+	struct qcom_scm_vmperm dst_vmlist[1] = {{self, PERM_READ | PERM_WRITE | PERM_EXEC}};
 	int ret;
 
-	ret = gh_rm_mem_reclaim(qdev->memparcel, 0);
+	ret = ghd_rm_mem_reclaim(qdev->memparcel, 0);
 	if (ret)
 		pr_err("%s: Gunyah reclaim failed\n", __func__);
 
-	hyp_assign_phys(qdev->res.start, resource_size(&qdev->res),
-			src_vmlist, 2, dst_vmlist, dst_perms, 1);
+	ret = qcom_scm_assign_mem(qdev->res.start, resource_size(&qdev->res),
+				  &src_vmlist, dst_vmlist, 1);
+	if (ret)
+		pr_err("%s: qcom_scm_assign_mem failed addr=%x size=%u err=%d\n",
+		       __func__, qdev->res.start, resource_size(&qdev->res), ret);
 }
 
-static int qrtr_gunyah_rm_cb(struct notifier_block *nb, unsigned long cmd,
-			     void *data)
+static int qrtr_gunyah_vm_cb(struct notifier_block *nb, unsigned long cmd, void *data)
 {
-	struct gh_rm_notif_vm_status_payload *vm_status_payload;
-	struct qrtr_gunyah_dev *qdev;
+	struct qrtr_gunyah_dev *qdev = container_of(nb, struct qrtr_gunyah_dev, vm_nb);
 	gh_vmid_t peer_vmid;
 	gh_vmid_t self_vmid;
+	gh_vmid_t vmid;
 
-	qdev = container_of(nb, struct qrtr_gunyah_dev, rm_nb);
+	if (!data)
+		return NOTIFY_DONE;
+	vmid = *((gh_vmid_t *)data);
 
-	if (cmd != GH_RM_NOTIF_VM_STATUS)
+	if (ghd_rm_get_vmid(qdev->peer_name, &peer_vmid))
 		return NOTIFY_DONE;
-
-	vm_status_payload = data;
-	if (vm_status_payload->vm_status != GH_RM_VM_STATUS_READY &&
-	    vm_status_payload->vm_status != GH_RM_VM_STATUS_RESET)
+	if (ghd_rm_get_vmid(GH_PRIMARY_VM, &self_vmid))
 		return NOTIFY_DONE;
-	if (gh_rm_get_vmid(qdev->peer_name, &peer_vmid))
-		return NOTIFY_DONE;
-	if (gh_rm_get_vmid(GH_PRIMARY_VM, &self_vmid))
-		return NOTIFY_DONE;
-	if (peer_vmid != vm_status_payload->vmid)
+	if (peer_vmid != vmid)
 		return NOTIFY_DONE;
 
-	if (vm_status_payload->vm_status == GH_RM_VM_STATUS_READY) {
+	mutex_lock(&qdev->state_lock);
+	switch (cmd) {
+	case GH_VM_BEFORE_POWERUP:
+		if (qdev->registered)
+			break;
 		qrtr_gunyah_fifo_init(qdev);
-		if (qrtr_endpoint_register(&qdev->ep, QRTR_EP_NET_ID_AUTO,
-					   false, NULL)) {
+		if (qrtr_endpoint_register(&qdev->ep, QRTR_EP_NET_ID_AUTO, false, NULL)) {
 			pr_err("%s: endpoint register failed\n", __func__);
-			return NOTIFY_DONE;
+			break;
 		}
 		if (qrtr_gunyah_share_mem(qdev, self_vmid, peer_vmid)) {
 			pr_err("%s: failed to share memory\n", __func__);
-			return NOTIFY_DONE;
+			qrtr_endpoint_unregister(&qdev->ep);
+			break;
 		}
+		qdev->registered = true;
+		break;
+	case GH_VM_POWERUP_FAIL:
+		fallthrough;
+	case GH_VM_EARLY_POWEROFF:
+		if (qdev->registered) {
+			qrtr_endpoint_unregister(&qdev->ep);
+			qrtr_gunyah_unshare_mem(qdev, self_vmid, peer_vmid);
+			qdev->registered = false;
+		}
+		break;
 	}
-	if (vm_status_payload->vm_status == GH_RM_VM_STATUS_RESET) {
-		qrtr_endpoint_unregister(&qdev->ep);
-		qrtr_gunyah_unshare_mem(qdev, self_vmid, peer_vmid);
-	}
+	mutex_unlock(&qdev->state_lock);
 
 	return NOTIFY_DONE;
 }
@@ -552,10 +656,28 @@ static struct device_node *qrtr_gunyah_svm_of_parse(struct qrtr_gunyah_dev *qdev
 
 	shm_np = of_parse_phandle(np, "memory-region", 0);
 	if (!shm_np)
-		dev_err(qdev->dev, "cant parse svm shared mem node!\n");
+		dev_err(qdev->dev, "can't parse svm shared mem node!\n");
 
 	of_node_put(np);
 	return shm_np;
+}
+
+static int qrtr_gunyah_alloc_fifo(struct qrtr_gunyah_dev *qdev)
+{
+	struct device *dev = qdev->dev;
+	resource_size_t size;
+
+	size = FIFO_1_START + FIFO_SIZE;
+
+	qdev->base = dma_alloc_attrs(dev, size, &qdev->res.start, GFP_KERNEL,
+				     DMA_ATTR_FORCE_CONTIGUOUS);
+	if (!qdev->base)
+		return -ENOMEM;
+
+	qdev->res.end = qdev->res.start + size - 1;
+	qdev->size = size;
+
+	return 0;
 }
 
 static int qrtr_gunyah_map_memory(struct qrtr_gunyah_dev *qdev)
@@ -565,11 +687,14 @@ static int qrtr_gunyah_map_memory(struct qrtr_gunyah_dev *qdev)
 	resource_size_t size;
 	int ret;
 
-	np = of_parse_phandle(dev->of_node, "shared-buffer", 0);
-	if (!np) {
+	if (qdev->master) {
+		np = of_parse_phandle(dev->of_node, "shared-buffer", 0);
+		if (!np)
+			return qrtr_gunyah_alloc_fifo(qdev);
+	} else {
 		np = qrtr_gunyah_svm_of_parse(qdev);
 		if (!np) {
-			dev_err(dev, "cant parse shared mem node!\n");
+			dev_err(dev, "can't parse shared mem node!\n");
 			return -EINVAL;
 		}
 	}
@@ -619,6 +744,10 @@ static int qrtr_gunyah_probe(struct platform_device *pdev)
 	if (!qdev->ring.buf)
 		return -ENOMEM;
 
+	mutex_init(&qdev->state_lock);
+	qdev->registered = false;
+	spin_lock_init(&qdev->dbl_lock);
+
 	ret = of_property_read_u32(node, "gunyah-label", &qdev->label);
 	if (ret) {
 		dev_err(qdev->dev, "failed to read label info %d\n", ret);
@@ -639,9 +768,9 @@ static int qrtr_gunyah_probe(struct platform_device *pdev)
 		if (ret)
 			qdev->peer_name = GH_SELF_VM;
 
-		qdev->rm_nb.notifier_call = qrtr_gunyah_rm_cb;
-		qdev->rm_nb.priority = INT_MAX;
-		gh_rm_register_notifier(&qdev->rm_nb);
+		qdev->vm_nb.notifier_call = qrtr_gunyah_vm_cb;
+		qdev->vm_nb.priority = INT_MAX;
+		gh_register_vm_notifier(&qdev->vm_nb);
 	}
 
 	dbl_label = qdev->label;
@@ -685,10 +814,32 @@ register_fail:
 static int qrtr_gunyah_remove(struct platform_device *pdev)
 {
 	struct qrtr_gunyah_dev *qdev = dev_get_drvdata(&pdev->dev);
+	struct device_node *np;
+	gh_vmid_t peer_vmid;
+	gh_vmid_t self_vmid;
 
 	cancel_work_sync(&qdev->work);
 	gh_dbl_tx_unregister(qdev->tx_dbl);
 	gh_dbl_rx_unregister(qdev->rx_dbl);
+
+	if (!qdev->master)
+		return 0;
+	gh_unregister_vm_notifier(&qdev->vm_nb);
+
+	if (ghd_rm_get_vmid(qdev->peer_name, &peer_vmid))
+		return 0;
+	if (ghd_rm_get_vmid(GH_PRIMARY_VM, &self_vmid))
+		return 0;
+	qrtr_gunyah_unshare_mem(qdev, self_vmid, peer_vmid);
+
+	np = of_parse_phandle(qdev->dev->of_node, "shared-buffer", 0);
+	if (np) {
+		of_node_put(np);
+		return 0;
+	}
+
+	dma_free_attrs(qdev->dev, qdev->size, qdev->base, qdev->res.start,
+		       DMA_ATTR_FORCE_CONTIGUOUS);
 
 	return 0;
 }
@@ -709,4 +860,4 @@ static struct platform_driver qrtr_gunyah_driver = {
 module_platform_driver(qrtr_gunyah_driver);
 
 MODULE_DESCRIPTION("QTI IPC-Router Gunyah interface driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
