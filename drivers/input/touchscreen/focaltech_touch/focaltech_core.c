@@ -2923,7 +2923,7 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
 	if (ts_data->ts_workqueue)
 		INIT_WORK(&ts_data->resume_work, fts_resume_work);
 
-	if (!strcmp(fts_data->touch_environment, "pvm"))
+	// if (!strcmp(fts_data->touch_environment, "pvm"))
 		fts_ts_register_for_panel_events(ts_data->dev->of_node, ts_data);
 #elif defined(CONFIG_FB)
 	if (ts_data->ts_workqueue) {
