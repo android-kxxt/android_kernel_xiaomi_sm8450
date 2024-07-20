@@ -56,7 +56,6 @@ minidump-y	 += msm_minidump.o minidump_log.o
 minidump-$(CONFIG_QCOM_MINIDUMP_PANIC_DUMP) += minidump_memory.o
 obj-$(CONFIG_QCOM_VA_MINIDUMP) += qcom_va_minidump.o
 obj-$(CONFIG_QCOM_MEM_OFFLINE) += mem-offline.o
-obj-$(CONFIG_GH_TLMM_VM_MEM_ACCESS) += gh_tlmm_vm_mem_access.o
 obj-$(CONFIG_GH_CPUSYS_VM_MEM_ACCESS) += gh_cpusys_vm_mem_access.o
 obj-$(CONFIG_QCOM_MEM_BUF) += mem_buf/
 obj-$(CONFIG_QCOM_MEMORY_DUMP_V2) += memory_dump_v2.o
