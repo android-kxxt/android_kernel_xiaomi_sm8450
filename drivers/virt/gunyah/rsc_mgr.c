@@ -936,6 +936,8 @@ static int gh_rm_drv_remove(struct platform_device *pdev)
 
 static const struct of_device_id gh_rm_of_match[] = {
 	{ .compatible = "gunyah-resource-manager" },
+	{ .compatible = "qcom,resource-manager-1-0" },
+	{ .compatible = "qcom,resource-manager" },
 	{}
 };
 MODULE_DEVICE_TABLE(of, gh_rm_of_match);
