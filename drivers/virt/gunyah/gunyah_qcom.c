@@ -110,6 +110,8 @@ static struct gh_rm_platform_ops qcom_scm_gh_rm_platform_ops = {
 /* {19bd54bd-0b37-571b-946f-609b54539de6} */
 static const uuid_t QCOM_EXT_UUID =
 	UUID_INIT(0x19bd54bd, 0x0b37, 0x571b, 0x94, 0x6f, 0x60, 0x9b, 0x54, 0x53, 0x9d, 0xe6);
+static const uuid_t QCOM_EXT_UUID_OLD =
+	UUID_INIT(0xbd54bd19, 0x1b57, 0x370b, 0x9b, 0x60, 0x6f, 0x94, 0xe6, 0x9d, 0x53, 0x54);
 
 #define GH_QCOM_EXT_CALL_UUID_ID	ARM_SMCCC_CALL_VAL(ARM_SMCCC_FAST_CALL, ARM_SMCCC_SMC_32, \
 							   ARM_SMCCC_OWNER_VENDOR_HYP, 0xff01)
@@ -126,7 +128,14 @@ static bool gh_has_qcom_extensions(void)
 	((u32 *)&uuid.b[0])[2] = lower_32_bits(res.a2);
 	((u32 *)&uuid.b[0])[3] = lower_32_bits(res.a3);
 
-	return uuid_equal(&uuid, &QCOM_EXT_UUID);
+	pr_info("gunyah_qcom: QCOM_EXT_UUID = %lx, %lx, %lx, %lx\n",
+	 ((u32*)&QCOM_EXT_UUID.b[0])[0], ((u32*)&QCOM_EXT_UUID.b[0])[1], ((u32*)&QCOM_EXT_UUID.b[0])[2], ((u32*)&QCOM_EXT_UUID.b[0])[3]);
+	pr_info("gunyah_qcom: GH_QCOM_EXT_CALL_UUID_ID returns %lx, %lx, %lx, %lx\n",
+	 ((u32 *)&uuid.b[0])[0], ((u32 *)&uuid.b[0])[1], ((u32 *)&uuid.b[0])[2], ((u32 *)&uuid.b[0])[3]);
+	// On xiaomi sm8450, GH_QCOM_EXT_CALL_UUID_ID returns uuid in reverse byte ordering: 
+	// I gunyah_qcom: QCOM_EXT_UUID = bd54bd19, 1b57370b, 9b606f94, e69d5354
+	// I gunyah_qcom: GH_QCOM_EXT_CALL_UUID_ID returns 19bd54bd, b37571b, 946f609b, 54539de6
+	return uuid_equal(&uuid, &QCOM_EXT_UUID) || uuid_equal(&uuid, &QCOM_EXT_UUID_OLD);
 }
 
 static int __init qcom_gh_platform_hooks_register(void)
